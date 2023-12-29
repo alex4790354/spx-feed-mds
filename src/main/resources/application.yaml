@@ -1,0 +1,93 @@
+server:
+  port: 7474
+  shutdown: graceful
+
+spring:
+  application:
+    name: SpxFeedMds
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH_ISSUER_URI:http://127.0.0.1:8080/realms/Spx}
+          jwk-set-uri: ${AUTH_ISSUER_CERTS:http://127.0.0.1:8080/realms/Spx/protocol/openid-connect/certs}
+
+  liquibase:
+    enabled: true
+    change-log: classpath:/db/changelog/db.changelog-master.yaml
+    contexts: base
+    liquibase-schema: mds
+
+  datasource:
+    driverClassName: org.postgresql.Driver
+#    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_DATABASE:spx_local_test}
+#    username: ${DB_USER:spx_local_test}
+#    password: ${DB_PASSWORD:1234}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_DATABASE:spx_local_test}
+    username: ${DB_USER:spx_local_test}
+    password: ${DB_PASSWORD:1234}
+    hikari:
+      maximumPoolSize: ${DB_MAX_CONNECTIONS:3}
+
+  mybatis:
+    configuration:
+      map-underscore-to-camel-case: true
+
+  quartz:
+    job-store-type: memory
+    properties:
+      org:
+        quartz:
+          jobStore:
+            class: org.quartz.simpl.RAMJobStore
+          scheduler:
+            instanceId: AUTO
+            isClustered: true
+            useProperties: true
+            instanceName: spimex-scheduler
+          threadPool:
+            class: org.quartz.simpl.SimpleThreadPool
+            threadCount: 1
+
+management:
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: diskSpace, readinessState
+      show-details: "ALWAYS"
+      probes:
+        enabled: true
+  endpoints:
+    enabled-by-default: true
+    web:
+      exposure:
+        include: health
+  security:
+    enabled: false
+
+MdsData:
+  security:
+    roles:
+      internal: ${ROLE_USER_INTERNAL:user:internal}
+
+feign:
+  url-client: ${FEIGN_OPEC_BASKET_SERVICE_URL:https://opec.org}
+  client:
+    config:
+      default:
+        connectTimeout: ${FEIGN_CONNECT_TIMEOUT:30000}
+        readTimeout: ${FEIGN_READ_TIMEOUT:10000}
+        loggerLevel: ${FEIGN_LOG_LEVEL:basic}
+
+schedulers:
+  opec:
+    enable: true
+    permanent-jobs-group-name: OPEC
+    show-time-job-cron: ${OPEC_ARCHIVES_JOB_CRON:0 0 12 * * ?}

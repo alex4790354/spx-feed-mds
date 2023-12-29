@@ -1,0 +1,576 @@
+#
+
+#variables:
+#    GIT_STRATEGY: clone
+
+stages:
+  - setvars
+  - build
+  - deploy
+  - qa
+
+variables:
+  #VER: "1.0.0"
+  PROJECT: $CI_PROJECT_NAME
+  NAMESPACE: default
+  VERSION: $VER.$CI_PIPELINE_IID #OVERRIDE!
+  BUILD_FLAGS_DEV: ''
+  BUILD_FLAGS_PROD: ''
+  BUILD_FLAGS_RELEASE: $BUILD_FLAGS_PROD
+  #EXTENDED_VERSION: $VER.$CI_PIPELINE_IID+$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA
+  #DEV_BRANCH: "master"
+  #PROD_BRANCH: "prod"
+  #DOCKER_HOST: tcp://docker:2376
+  #DOCKER_TLS_CERTDIR: "/certs"
+  #DOCKER_TLS_VERIFY: 1
+  #DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+
+include:
+  - local: '_version.yml'
+  #- project: 'spx/stand-configs'
+  #  ref: 'master'
+  #  file: 'conf-dev2.yml'
+
+
+#not using for now
+#services:
+#  - name: $DOCKER_URL/docker:20-dind
+#    alias: docker
+
+
+setup-env:
+  stage: setvars
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/ubuntu-22
+  rules:
+    - if: '$deploy'    
+      when: on_success
+  artifacts:
+    reports:
+      dotenv: build.env
+  before_script:
+    - lsb_release -a
+  script: |
+    #IFS=$'\n'
+    touch build.env
+    for STAND in ${deploy^^}; do
+      if [ "$STAND" == "QA" ]; then echo "DEPLOY_QA=true" >> build.env; echo QA; fi;
+      if [ "$STAND" == "DEV" ]; then echo "DEPLOY_DEV=true" >> build.env; echo DEV; fi;
+      if [ "$STAND" == "PPE" ]; then echo "DEPLOY_PPE=true" >> build.env; echo PPE; fi;
+      if [ "$STAND" == "PROD" ]; then echo "DEPLOY_PROD=true" >> build.env; echo PROD; fi;
+    done
+    #echo "VERSION=$VER.$CI_PIPELINE_IID" >> build.env
+
+
+sonarqube-check:
+  stage: setvars
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/maven:3.9-jdk-17
+  rules:
+    - if: '$deploy == null'
+  allow_failure: true
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Defines the location of the analysis task cache
+    GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+  script: 
+    - mvn -s settings.xml verify sonar:sonar -Dsonar.projectKey=$SONAR_PROJECT -Dsonar.projectName="[${CI_PROJECT_NAMESPACE}] ${CI_PROJECT_NAME}" -Dsonar.qualitygate.wait=true
+
+
+build-dev:
+  stage: build
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/maven:3.9-jdk-17
+  rules:
+    - if: '$CI_COMMIT_REF_NAME !~ /^release\/.*$/ && $deploy == null'
+  artifacts:
+    paths:
+      - out/dev/
+    reports:
+      dotenv: build.env
+    expire_in: 1 day
+  variables:
+    BUILD: dev
+    BUILD_FLAGS: $BUILD_FLAGS_DEV
+  script: 
+    - test "$SNAPSHOT" == "true" && export SNAPVERSION=`mvn help:evaluate -Dexpression=project.version -q -DforceStdout`
+    - test "$SNAPSHOT" == "true" && echo "SNAPVERSION=${SNAPVERSION}">build.env
+    - mvn -s settings.xml -P ${BUILD} -f pom.xml versions${MAVEN_VERSIONS_PLUGIN_ADDON}:set -U -DnewVersion=$VERSION
+    - mvn -s settings.xml -P ${BUILD} -f pom.xml -T 1C clean package $BUILD_FLAGS
+    #- test "$SNAPSHOT" == "true" && mvn -s settings.xml -f pom.xml deploy
+    #- test $CI_COMMIT_BRANCH == $DEV_BRANCH && mvn -s settings.xml -f pom.xml deploy
+    - mkdir -p out/$BUILD
+    - cp target/*.jar out/$BUILD
+    - echo DONE[hack]
+
+
+package-dev:
+  stage: build
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/docker-20
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $DEV_BRANCH && $deploy == null'
+    - if: '$SNAPSHOT == "true" && $deploy == null'
+  needs: ['build-dev']
+  artifacts:
+    reports:
+      dotenv: build.env
+  before_script:
+    - docker login $DOCKER_CICD_URL --username $AGENT_DEV_LOGIN --password $AGENT_DEV_PASSWORD
+    - docker login $DOCKER_DEV_URL --username $AGENT_DEV_LOGIN --password $AGENT_DEV_PASSWORD
+  variables:
+    BUILD: dev
+  script: 
+    - test "$SNAPSHOT" == "true" && export VERSION=$SNAPVERSION
+    - echo "SNAPVERSION=$SNAPVERSION">build.env
+    - mkdir -p target
+    - cp out/$BUILD/*.jar target/
+    - docker build -t $DOCKER_DEV_URL/$PROJECT:$VERSION ./
+    - test $CI_COMMIT_BRANCH == $DEV_BRANCH && docker push $DOCKER_DEV_URL/$PROJECT:$VERSION
+    - test "$SNAPSHOT" == "true" && docker push $DOCKER_DEV_URL/$PROJECT:$VERSION
+    - docker image rm -f $DOCKER_DEV_URL/$PROJECT:$VERSION || true
+    - echo DONE[hack]
+
+
+build-prod:
+  stage: build
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/maven:3.9-jdk-17
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $DEV_BRANCH && "$SNAPSHOT" != "true" && $deploy == null'
+  artifacts:
+    paths:
+      - out/prod/
+    expire_in: 1 day
+  variables:
+    BUILD: prod
+    BUILD_FLAGS: $BUILD_FLAGS_PROD
+  script: 
+    - mvn -s settings.xml -P ${BUILD} -f pom.xml versions${MAVEN_VERSIONS_PLUGIN_ADDON}:set -U -DnewVersion=$VERSION
+    - mvn -s settings.xml -P ${BUILD} -f pom.xml -T 1C clean package $BUILD_FLAGS
+    - mkdir -p out/$BUILD
+    - cp target/*.jar out/$BUILD
+    - echo DONE[hack]
+
+
+package-prod:
+  stage: build
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/docker-20
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $DEV_BRANCH && "$SNAPSHOT" != "true" && $deploy == null'
+  needs: ['build-prod']
+  before_script:
+    - docker login $DOCKER_CICD_URL --username $AGENT_DEV_LOGIN --password $AGENT_DEV_PASSWORD
+    - docker login $DOCKER_PROD_URL --username $AGENT_PROD_LOGIN --password $AGENT_PROD_PASSWORD
+  variables:
+    BUILD: prod
+  script: 
+    - mkdir -p target
+    - cp out/$BUILD/*.jar target/
+    - docker build -t $DOCKER_PROD_URL/$PROJECT:$VERSION ./
+    - docker push $DOCKER_PROD_URL/$PROJECT:$VERSION
+    - docker image rm -f $DOCKER_PROD_URL/$PROJECT:$VERSION || true
+    - echo DONE[hack]
+
+
+
+build-release:
+  stage: build
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/maven:3.9-jdk-17
+  rules:
+    - if: '$CI_COMMIT_REF_NAME =~ /^release\/.*$/ && $CI_PIPELINE_SOURCE == "web" && $deploy == null'
+  artifacts:
+    paths:
+      - out/prod/
+    expire_in: 1 day
+  variables:
+    BUILD: release
+    BUILD_FLAGS: $BUILD_FLAGS_RELEASE
+    VERSION: ${VER}-RELEASE
+  script: 
+    - mvn -s settings.xml -P ${BUILD} -f pom.xml versions${MAVEN_VERSIONS_PLUGIN_ADDON}:set -U -DnewVersion=$VERSION
+    - mvn -s settings.xml -P ${BUILD} -f pom.xml -T 1C clean package deploy $BUILD_FLAGS
+    - mkdir -p out/$BUILD
+    - cp target/*.jar out/$BUILD
+    - echo DONE[hack]
+
+package-release:
+  stage: build
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/docker-20
+  rules:
+    - if: '$CI_COMMIT_REF_NAME =~ /^release\/.*$/ && $CI_PIPELINE_SOURCE == "web" && $deploy == null'
+  needs: ['build-release']
+  before_script:
+    - docker login -u "$AGENT_PROD_LOGIN" -p "$AGENT_PROD_PASSWORD"  $DOCKER_CICD_URL
+    - docker login -u "$AGENT_PROD_LOGIN" -p "$AGENT_PROD_PASSWORD"  $DOCKER_RELEASE_URL
+  variables:
+    BUILD: release
+    VERSION: ${VER}-RELEASE
+  script: 
+    - mkdir -p target
+    - cp out/$BUILD/*.jar target/
+    - docker build -t $DOCKER_RELEASE_URL/$PROJECT:$VERSION ./
+    - docker push $DOCKER_RELEASE_URL/$PROJECT:$VERSION
+    - docker image rm -f $DOCKER_RELEASE_URL/$PROJECT:$VERSION || true
+    - echo DONE[hack]
+
+
+
+build-dev-fromrelease:
+  stage: build
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/maven:3.9-jdk-17
+  needs: ['package-release']
+  rules:
+    - if: '$CI_COMMIT_REF_NAME =~ /^release\/.*$/ && $CI_PIPELINE_SOURCE == "web" && $deploy == null'
+  artifacts:
+    paths:
+      - out/dev/
+    expire_in: 1 day
+  variables:
+    BUILD: dev
+    BUILD_FLAGS: $BUILD_FLAGS_DEV
+    VERSION: ${VER}-RELEASE
+  script: 
+    - mvn -s settings.xml -P ${BUILD} -f pom.xml versions${MAVEN_VERSIONS_PLUGIN_ADDON}:set -U -DnewVersion=$VERSION
+    - mvn -s settings.xml -P ${BUILD} -f pom.xml -T 1C clean package $BUILD_FLAGS
+    - mkdir -p out/$BUILD
+    - cp target/*.jar out/$BUILD
+    - echo DONE[hack]
+
+package-dev-fromrelease:
+  stage: build
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/docker-20
+  rules:
+    - if: '$CI_COMMIT_REF_NAME =~ /^release\/.*$/ && $CI_PIPELINE_SOURCE == "web" && $deploy == null'
+  needs: ['build-dev-fromrelease']
+  before_script:
+    - docker login $DOCKER_CICD_URL --username $AGENT_DEV_LOGIN --password $AGENT_DEV_PASSWORD
+    - docker login $DOCKER_DEV_URL --username $AGENT_DEV_LOGIN --password $AGENT_DEV_PASSWORD
+  variables:
+    BUILD: dev
+    VERSION: ${VER}-RELEASE
+  script: 
+    - mkdir -p target
+    - cp out/$BUILD/*.jar target/
+    - docker build -t $DOCKER_DEV_URL/$PROJECT:$VERSION ./
+    - docker push $DOCKER_DEV_URL/$PROJECT:$VERSION
+    - docker image rm -f $DOCKER_DEV_URL/$PROJECT:$VERSION || true
+    - echo DONE[hack]
+
+
+
+build-prod-fromrelease:
+  stage: build
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/maven:3.9-jdk-17
+  rules:
+    - if: '$CI_COMMIT_REF_NAME =~ /^release\/.*$/ && $CI_PIPELINE_SOURCE == "web" && $deploy == null'
+  needs: ['package-release']
+  artifacts:
+    paths:
+      - out/prod/
+    expire_in: 1 day
+  variables:
+    BUILD: prod
+    BUILD_FLAGS: $BUILD_FLAGS_PROD
+    VERSION: ${VER}-RELEASE
+  script: 
+    - mvn -s settings.xml -P ${BUILD} -f pom.xml versions${MAVEN_VERSIONS_PLUGIN_ADDON}:set -U -DnewVersion=$VERSION
+    - mvn -s settings.xml -P ${BUILD} -f pom.xml -T 1C clean package $BUILD_FLAGS
+    - mkdir -p out/$BUILD
+    - cp target/*.jar out/$BUILD
+    - echo DONE[hack]
+
+package-prod-fromrelease:
+  stage: build
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/docker-20
+  rules:
+    - if: '$CI_COMMIT_REF_NAME =~ /^release\/.*$/ && $CI_PIPELINE_SOURCE == "web" && $deploy == null'
+  needs: ['build-prod-fromrelease']
+  before_script:
+    - docker login $DOCKER_CICD_URL --username $AGENT_DEV_LOGIN --password $AGENT_DEV_PASSWORD
+    - docker login $DOCKER_PROD_URL --username $AGENT_PROD_LOGIN --password $AGENT_PROD_PASSWORD
+  variables:
+    BUILD: prod
+    VERSION: ${VER}-RELEASE
+  script: 
+    - mkdir -p target
+    - cp out/$BUILD/*.jar target/
+    - docker build -t $DOCKER_PROD_URL/$PROJECT:$VERSION ./
+    - docker push $DOCKER_PROD_URL/$PROJECT:$VERSION
+    - docker image rm -f $DOCKER_PROD_URL/$PROJECT:$VERSION || true
+    - echo DONE[hack]
+
+
+
+deploy-dev:
+  image: $DOCKER_CICD_URL/helm
+  stage: deploy
+  tags:
+    - docker
+    - linux
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $DEV_BRANCH && $deploy == null'
+    - if: '$SNAPSHOT == "true" && $deploy == null'
+  artifacts:
+    paths:
+      - helm/
+    expire_in: 1 week
+  variables:
+    KUBECONFIG: $KUBECONFIG_DEV
+  before_script:
+  script:
+    - test "$SNAPSHOT" == "true" && export VERSION=$SNAPVERSION
+    - cd helm/$PROJECT
+    - sed -i -E "s/REPLACEME/$VERSION/" Chart.yaml
+    - helm upgrade --atomic --cleanup-on-fail --timeout 4m --install $PROJECT -n $NAMESPACE --set image.repository=$DOCKER_DEV_URL/$PROJECT --set image.tag=$VERSION --values values.yaml --values values.dev.yaml ./ || export ERRORLEVEL=1
+    #- test -v ERRORLEVEL && helm rollback $PROJECT --cleanup-on-fail --timeout 4m
+    - helm history $PROJECT || true
+    - test -v ERRORLEVEL && echo DEPLOY FAILED, CHECK LOG && exit 13
+    - echo DONE[hack]
+
+deploy-qa:
+  image: $DOCKER_CICD_URL/helm
+  stage: deploy
+  tags:
+    - docker
+    - linux
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $DEV_BRANCH && $deploy == null && $CICD_AUTO_DEPLOY_QA == "true"'
+  artifacts:
+    paths:
+      - helm/
+    expire_in: 1 week
+  variables:
+    KUBECONFIG: $KUBECONFIG_QA
+  before_script:
+  script:
+    - cd helm/$PROJECT
+    - sed -i -E "s/REPLACEME/$VERSION/" Chart.yaml
+    - helm upgrade --atomic --cleanup-on-fail --timeout 4m --install $PROJECT -n $NAMESPACE --set image.repository=$DOCKER_DEV_URL/$PROJECT --set image.tag=$VERSION --values values.yaml --values values.qa.yaml ./ || export ERRORLEVEL=1
+    #- test -v ERRORLEVEL && helm rollback $PROJECT --cleanup-on-fail --timeout 4m
+    - helm history $PROJECT || true
+    - test -v ERRORLEVEL && echo DEPLOY FAILED, CHECK LOG && exit 13
+    - echo DONE[hack]
+
+
+deploy-qa-manual-precheck:
+  stage: deploy
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/docker-20
+  artifacts:
+    paths:
+      - flags/
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $DEV_BRANCH && $deploy && $version'
+  before_script:
+    - docker login $DOCKER_DEV_URL -u "$DOCKER_DEV_LOGIN" -p "$DOCKER_DEV_PASSWORD"
+    - mkdir -p flags
+  script: 
+    - if [ "$DEPLOY_QA" != "true" ];then echo "NO qa"; exit 0; fi
+    - touch flags/qa
+    - echo Checking $PROJECT $version in $DOCKER_DEV_URL
+    - docker pull $DOCKER_DEV_URL/$PROJECT:$version
+    - docker image rm -f $DOCKER_DEV_URL/$PROJECT:$version
+
+deploy-qa-manual:
+  stage: deploy
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/helm
+  needs: ['deploy-qa-manual-precheck']
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $DEV_BRANCH && $deploy && $version'
+  variables:
+    KUBECONFIG: $KUBECONFIG_QA
+  script:
+    - echo $version = $deploy
+    - if [ ! -f flags/qa ];then echo "NO qa"; exit 0; fi
+    - export VERSION=$version
+    - cd helm/$PROJECT
+    - sed -i -E "s/REPLACEME/$VERSION/" Chart.yaml
+    - helm upgrade --atomic --cleanup-on-fail --timeout 4m --install $PROJECT -n $NAMESPACE --set image.repository=$DOCKER_DEV_URL/$PROJECT --set image.tag=$VERSION --values values.yaml --values values.qa.yaml ./ || export ERRORLEVEL=1
+    #- test -v ERRORLEVEL && helm rollback $PROJECT --cleanup-on-fail --timeout 4m
+    - helm history $PROJECT || true
+    - test -v ERRORLEVEL && echo DEPLOY FAILED, CHECK LOG && exit 13
+    - echo DONE[hack]
+
+
+
+deploy-ppe-manual-precheck:
+  stage: deploy
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/docker-20
+  artifacts:
+    paths:
+      - flags/
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $DEV_BRANCH && $deploy && $version'
+  before_script:
+    - docker login $DOCKER_PROD_URL -u "$DOCKER_PROD_LOGIN" -p "$DOCKER_PROD_PASSWORD"
+    - mkdir -p flags
+  script: 
+    - if [ "$DEPLOY_PPE" != "true" ];then echo "NO ppe"; exit 0; fi
+    - touch flags/ppe
+    - echo Checking $PROJECT $version in $DOCKER_PROD_URL
+    - docker pull $DOCKER_PROD_URL/$PROJECT:$version
+    - docker image rm -f $DOCKER_PROD_URL/$PROJECT:$version
+
+deploy-ppe-manual:
+  stage: deploy
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/helm
+  needs: ['deploy-ppe-manual-precheck']
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $DEV_BRANCH && $deploy && $version'
+  variables:
+    KUBECONFIG: $KUBECONFIG_PPE
+  script:
+    - echo $version = $deploy
+    - if [ ! -f flags/ppe ];then echo "NO ppe"; exit 0; fi
+    - export VERSION=$version
+    - cd helm/$PROJECT
+    - sed -i -E "s/REPLACEME/$VERSION/" Chart.yaml
+    - helm upgrade --atomic --cleanup-on-fail --timeout 4m --install $PROJECT -n $NAMESPACE --set image.repository=$DOCKER_PROD_URL/$PROJECT --set image.tag=$VERSION --values values.yaml --values values.ppe.yaml ./ || export ERRORLEVEL=1
+    #- test -v ERRORLEVEL && helm rollback $PROJECT --cleanup-on-fail --timeout 4m
+    - helm history $PROJECT || true
+    - test -v ERRORLEVEL && echo DEPLOY FAILED, CHECK LOG && exit 13
+    - echo DONE[hack]
+
+
+
+deploy-prod-manual-precheck:
+  stage: deploy
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/docker-20
+  artifacts:
+    paths:
+      - flags/
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $DEV_BRANCH && $deploy && $version'
+  before_script:
+    - docker login $DOCKER_PROD_URL -u "$DOCKER_PROD_LOGIN" -p "$DOCKER_PROD_PASSWORD"
+    - mkdir -p flags
+  script: 
+    - if [ "$DEPLOY_PROD" != "true" ];then echo "NO prod"; exit 0; fi
+    - touch flags/prod
+    - echo Checking $PROJECT $version in $DOCKER_PROD_URL
+    - docker pull $DOCKER_PROD_URL/$PROJECT:$version
+    - docker image rm -f $DOCKER_PROD_URL/$PROJECT:$version
+
+deploy-prod-manual:
+  stage: deploy
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/helm
+  needs: ['deploy-prod-manual-precheck']
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $DEV_BRANCH && $deploy && $version'
+  variables:
+    KUBECONFIG: $KUBECONFIG_PROD
+  script:
+    - echo $version = $deploy
+    - if [ ! -f flags/prod ];then echo "NO prod"; exit 0; fi
+    - export VERSION=$version
+    - cd helm/$PROJECT
+    - sed -i -E "s/REPLACEME/$VERSION/" Chart.yaml
+    - helm upgrade --atomic --cleanup-on-fail --timeout 4m --install $PROJECT -n $NAMESPACE --set image.repository=$DOCKER_PROD_URL/$PROJECT --set image.tag=$VERSION --values values.yaml --values values.prod.yaml ./ || export ERRORLEVEL=1
+    #- test -v ERRORLEVEL && helm rollback $PROJECT --cleanup-on-fail --timeout 4m
+    - helm history $PROJECT || true
+    - test -v ERRORLEVEL && echo DEPLOY FAILED, CHECK LOG && exit 13
+    - echo DONE[hack]
+
+
+
+deploy-dev-manual-precheck:
+  stage: deploy
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/docker-20
+  artifacts:
+    paths:
+      - flags/
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $DEV_BRANCH && $deploy && $version'
+  before_script:
+    - docker login $DOCKER_DEV_URL -u "$DOCKER_DEV_LOGIN" -p "$DOCKER_DEV_PASSWORD"
+    - mkdir -p flags
+  script: 
+    - if [ "$DEPLOY_DEV" != "true" ];then echo "NO dev"; exit 0; fi
+    - touch flags/dev
+    - echo Checking $PROJECT $version in $DOCKER_DEV_URL
+    - docker pull $DOCKER_DEV_URL/$PROJECT:$version
+    - docker image rm -f $DOCKER_DEV_URL/$PROJECT:$version
+
+deploy-dev-manual:
+  stage: deploy
+  tags:
+    - docker
+    - linux
+  image: $DOCKER_CICD_URL/helm
+  needs: ['deploy-dev-manual-precheck']
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $DEV_BRANCH && $deploy && $version'
+  variables:
+    KUBECONFIG: $KUBECONFIG_DEV
+  script:
+    - echo $version = $deploy
+    - if [ ! -f flags/dev ];then echo "NO dev"; exit 0; fi
+    - export VERSION=$version
+    - cd helm/$PROJECT
+    - echo $VERSION
+    - sed -i -E "s/REPLACEME/$VERSION/" Chart.yaml
+    - helm upgrade --atomic --cleanup-on-fail --timeout 4m --install $PROJECT -n $NAMESPACE --set image.repository=$DOCKER_DEV_URL/$PROJECT --set image.tag=$VERSION --values values.yaml --values values.dev.yaml ./ || export ERRORLEVEL=1
+    #- test -v ERRORLEVEL && helm rollback $PROJECT --cleanup-on-fail --timeout 4m
+    - helm history $PROJECT || true
+    - test -v ERRORLEVEL && echo DEPLOY FAILED, CHECK LOG && exit 13
+    - echo DONE[hack]
+
+
+
+
+

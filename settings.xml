@@ -1,0 +1,37 @@
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+  <servers>
+    <server>
+      <id>maven-proxy</id>
+      <username>${env.AGENT_DEV_LOGIN}</username>
+      <password>${env.AGENT_DEV_PASSWORD}</password>
+      <configuration></configuration>
+    </server>
+    <server>
+      <id>maven-dev</id>
+      <username>${env.AGENT_DEV_LOGIN}</username>
+      <password>${env.AGENT_DEV_PASSWORD}</password>
+      <configuration></configuration>
+    </server>
+    <server>
+      <id>maven-prod</id>
+      <username>${env.AGENT_PROD_LOGIN}</username>
+      <password>${env.AGENT_PROD_PASSWORD}</password>
+      <configuration></configuration>
+    </server>
+    <server>
+      <id>maven-release</id>
+      <username>${env.AGENT_PROD_LOGIN}</username>
+      <password>${env.AGENT_PROD_PASSWORD}</password>
+      <configuration></configuration>
+    </server>
+  </servers>
+  <mirrors>
+    <mirror>
+      <id>maven-proxy</id>
+      <name>Maven Repository Manager running on nexus.spimex.pdd</name>
+      <url>${env.MAVEN_PROXY_URL}</url>
+      <mirrorOf>central</mirrorOf>
+    </mirror>
+  </mirrors>
+</settings>

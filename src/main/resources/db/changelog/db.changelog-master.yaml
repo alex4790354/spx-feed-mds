@@ -1,0 +1,4 @@
+databaseChangeLog:
+  - includeAll:
+      path: spx_feed_mds_v1/
+      relativeToChangelogFile: true
