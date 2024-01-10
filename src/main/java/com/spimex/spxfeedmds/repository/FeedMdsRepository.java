@@ -166,4 +166,20 @@ public interface FeedMdsRepository {
                     updated_ts=NOW()
             """)
     void addOpecRates(@Param("ratesOpecDto") RatesOpecDto ratesOpecDto);
+
+
+
+    @Insert("""
+                INSERT INTO mds.minec_static (sid,
+                        instr_name,
+                        instr_name_eng)
+                VALUES
+                    (
+                        #{sidFields.sid},
+                        #{sidFields.fields.instrName},
+                        #{sidFields.fields.instrNameEng}
+                    )
+            """)
+    void addMinecValues(@Param("sidFields") FeedContributeRequest sidFields);
+
 }

@@ -32,7 +32,7 @@ public class SidFieldsRequest {
     @JsonProperty("F_VAL_A_PERS")
     private BigDecimal valueAPers;
 
-    //OPEC
+    // OPEC
     @JsonProperty("SID")
     private String sid;
     @JsonProperty("INSTR_NAME_ENG")
@@ -45,4 +45,29 @@ public class SidFieldsRequest {
     private Date updateDate;
     @JsonProperty("LAST")
     private BigDecimal last;
+
+    // MNEC
+    @JsonProperty("SOURCE_ID")
+    private String sourceId;
+    @JsonProperty("SOURCE_NAME")
+    private String sourceName;
+    @JsonProperty("SOURCE_NAME_ENG")
+    private String sourceNameEng;
+    @JsonProperty("INSTR_DES")
+    private String instrDes;
+    @JsonProperty("INSTR_DES_ENG")
+    private String instrDesEng;
+    @JsonProperty("SOURCE_LINK")
+    private String sourceLink;
+    @JsonProperty("SCALE")
+    private String scale;
+    @JsonProperty("UNIT_ENG")
+    private String unitEng;
+    @JsonProperty("F_VAL")
+    private BigDecimal fVal;
+    @JsonProperty("FORECAST_PERIOD")
+    private String forecastPeriod;
+    @JsonProperty("LINK")
+    private String link;
+
 }

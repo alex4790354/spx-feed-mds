@@ -2,6 +2,7 @@ package com.spimex.spxfeedmds.service.mds;
 
 import com.spimex.spxfeedmds.general.constant.CbrfSidPostfix;
 import com.spimex.spxfeedmds.general.constant.MdsMessageConstant;
+import com.spimex.spxfeedmds.general.constant.MnecSidPostfix;
 import com.spimex.spxfeedmds.general.constant.OpecSidPostfix;
 import com.spimex.spxfeedmds.general.dto.FeedContributeRequest;
 import com.spimex.spxfeedmds.general.dto.FeedResponse;
@@ -36,7 +37,28 @@ public class FeedContributeService {
                 FeedResponse status = abstractFeedService.addValues(requestDto);
                 responses.add(status);
             } else {
-                log.warn("Not found service by 'SID' --> {}", requestDto.getSid());
+                log.warn("Not found service by 'SID' -40-> {}", requestDto.getSid());
+                responses.add(new FeedResponse(
+                        requestDto.getSid(),
+                        HttpStatus.NOT_FOUND.name(),
+                        MdsMessageConstant.MSG_SID_NOT_FOUND));
+            }
+        });
+        return responses;
+    }
+
+    // TODO: delete this methode after test
+    public List<FeedResponse> addFeedValues(List<FeedContributeRequest> requests) {
+
+        List<FeedResponse> responses = new LinkedList<>();
+
+        requests.forEach(requestDto -> {
+            abstractFeedService = chooseService(requestDto.getSid());
+            if (abstractFeedService != null) {
+                FeedResponse status = abstractFeedService.addValues(requestDto);
+                responses.add(status);
+            } else {
+                log.warn("Not found service by 'SID' -61-> {}", requestDto.getSid());
                 responses.add(new FeedResponse(
                         requestDto.getSid(),
                         HttpStatus.NOT_FOUND.name(),
@@ -55,6 +77,10 @@ public class FeedContributeService {
                 !sid.endsWith(OpecSidPostfix.OPEC_SID_NOT_REQUIRED)) {
             log.debug("The service of the OPEC has been selected...");
             return new OpecRatesStaticService(repository);
-        } else return null;
+        } else if(MnecSidPostfix.fromMnecPostfixValueIsEquals(sid)) {
+            log.debug("The service of the Ministry of Economic Development of Russia has been selected...");
+            return new MnecService(repository);
+        }
+        else return null;
     }
 }

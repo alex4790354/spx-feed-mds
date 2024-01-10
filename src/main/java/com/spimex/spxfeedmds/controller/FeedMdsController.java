@@ -29,6 +29,11 @@ public class FeedMdsController {
         return ResponseEntity.ok(service.addFeedValues(requests, jwt));
     }
 
+    @PostMapping("/contribute/SPIMEX_MDS2")
+    public ResponseEntity<List<FeedResponse>> contributeMdsValues2(@RequestBody List<FeedContributeRequest> requests) {
+        return ResponseEntity.ok(service.addFeedValues(requests));
+    }
+
     @PostMapping("/manual/basket/basketDayArchives")
     public ResponseEntity<FeedResponse> getBasketDayArchives() {
         return ResponseEntity.ok(opecBasketService.getOpecArchivesJob());

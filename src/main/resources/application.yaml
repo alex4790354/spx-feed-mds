@@ -14,16 +14,16 @@ spring:
           jwk-set-uri: ${AUTH_ISSUER_CERTS:http://127.0.0.1:8080/realms/Spx/protocol/openid-connect/certs}
 
   liquibase:
-    enabled: true
+    enabled: false
     change-log: classpath:/db/changelog/db.changelog-master.yaml
     contexts: base
     liquibase-schema: mds
 
   datasource:
     driverClassName: org.postgresql.Driver
-#    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_DATABASE:spx_local_test}
-#    username: ${DB_USER:spx_local_test}
-#    password: ${DB_PASSWORD:1234}
+#    url: jdbc:postgresql://${DB_HOST:pg-dev.spimex.pdd}:${DB_PORT:6432}/${DB_DATABASE:spx-ddp1}
+#    username: ${DB_USER:spx-mds}
+#    password: ${DB_PASSWORD:ZETiYxK5GWB}
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_DATABASE:spx_local_test}
     username: ${DB_USER:spx_local_test}
     password: ${DB_PASSWORD:1234}
@@ -91,3 +91,17 @@ schedulers:
     enable: true
     permanent-jobs-group-name: OPEC
     show-time-job-cron: ${OPEC_ARCHIVES_JOB_CRON:0 0 12 * * ?}
+
+spimex:
+  teststring: "abracadabra"
+  minec:
+    - URALSMA-MNEC
+    - URALSPA-MNEC
+    - NSDTDPA-MNEC
+    - CRUDEEXP-MNEC
+    - FUELOEXP-MNEC
+  cbrfsid:
+    - Y0-CBRF
+    - Y1-CBRF
+    - Y2-CBRF
+    - Y3-CBRF

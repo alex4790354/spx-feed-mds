@@ -15,7 +15,8 @@ public class WebSecurity {
 
     private static final String[] AUTH_WHITELIST = {
             "/actuator/**",
-            "/test/**"
+            "/test/**",
+            "/contribute/**"
     };
 
     @Bean
