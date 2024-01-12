@@ -1,0 +1,12 @@
+[
+  {
+    "SID": "URALSMA-X-MNEC",
+    "fields":
+    {
+      "UPDATE_DATE": "2023-12-26",
+      "FORECAST_PERIOD": "2023-12-27",
+      "F_VAL": 21,
+      "F_VAL_MN": 22
+    }
+  }
+]

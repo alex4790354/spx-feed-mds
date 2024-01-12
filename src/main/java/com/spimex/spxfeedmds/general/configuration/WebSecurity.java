@@ -13,10 +13,12 @@ import static org.springframework.security.config.Customizer.withDefaults;
 @EnableWebSecurity
 public class WebSecurity {
 
+    // TODO: rollback.
     private static final String[] AUTH_WHITELIST = {
             "/actuator/**",
             "/test/**",
-            "/contribute/**"
+            "contribute/SPIMEX_MDS2",
+            "contribute/**"
     };
 
     @Bean

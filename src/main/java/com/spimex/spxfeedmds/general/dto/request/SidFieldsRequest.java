@@ -64,10 +64,32 @@ public class SidFieldsRequest {
     @JsonProperty("UNIT_ENG")
     private String unitEng;
     @JsonProperty("F_VAL")
-    private BigDecimal fVal;
+    private BigDecimal fValue;
     @JsonProperty("FORECAST_PERIOD")
     private String forecastPeriod;
     @JsonProperty("LINK")
     private String link;
+
+    public boolean isMinecStaticLoad() {
+        return instrName != null &&
+                instrNameEng != null &&
+                frequency != null &&
+                sourceId != null &&
+                sourceName != null &&
+                (unit != null ||
+                crncy != null);
+    }
+
+    public boolean isMinecExportLoad() {
+        return updateDate != null &&
+               effectiveDate != null &&
+               last != null;
+    }
+
+    public boolean isMinecForecastLoad() {
+        return updateDate != null &&
+               forecastPeriod != null &&
+               fValue != null ;
+    }
 
 }

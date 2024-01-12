@@ -1,0 +1,24 @@
+[
+  {
+    "SID": "URALSMA-MNEC",
+    "fields":
+    {
+      "INSTR_NAME": "Цена на нефть сырую марки «Юралс» на мировых рынках нефтяного сырья (средиземноморском и роттердамском), средняя за месяц",
+      "INSTR_NAME_ENG": "Urals, monthly average",
+      "FREQUENCY": "Monthly",
+      "SOURCE_ID": "MNEC",
+      "SOURCE_NAME": "Минэкономразвития России",
+      "SOURCE_NAME_ENG": "Ministry of Economic Development of Russia",
+      "SOURCE_LINK": "https://www.economy.gov.ru/material/departments/d12/",
+      "UNIT": "баррель",
+      "UNIT_ENG": "bbl",
+      "CRNCY": "840",
+      "UPDATE_DATE": "2023-12-16",
+      "EFFECTIVE_DATE": "2023-12-17",
+      "FORECAST_PERIOD": "2023-12-27",
+      "F_VAL": 301,
+      "F_VAL_MN": 302,
+      "LAST": 303
+    }
+  }
+]

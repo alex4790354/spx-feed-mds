@@ -172,14 +172,81 @@ public interface FeedMdsRepository {
     @Insert("""
                 INSERT INTO mds.minec_static (sid,
                         instr_name,
-                        instr_name_eng)
-                VALUES
-                    (
-                        #{sidFields.sid},
+                        instr_name_eng,
+                        frequency,
+                        source_id,
+                        source_name,
+                        source_name_eng,
+                        source_link,
+                        unit,
+                        unit_eng,
+                        crncy)
+                VALUES( #{sidFields.sid},
                         #{sidFields.fields.instrName},
-                        #{sidFields.fields.instrNameEng}
-                    )
+                        #{sidFields.fields.instrNameEng},
+                        #{sidFields.fields.frequency},
+                        #{sidFields.fields.sourceId},
+                        #{sidFields.fields.sourceName},
+                        #{sidFields.fields.sourceNameEng},
+                        #{sidFields.fields.sourceLink},
+                        #{sidFields.fields.unit},
+                        #{sidFields.fields.unitEng},
+                        #{sidFields.fields.crncy}
+                     )
+                ON CONFLICT ON CONSTRAINT PK_MINEC_STATIC
+                DO
+                UPDATE SET
+                    instr_name=EXCLUDED.instr_name,
+                    instr_name_eng=EXCLUDED.instr_name_eng,
+                    frequency=EXCLUDED.frequency,
+                    source_id=EXCLUDED.source_id,
+                    source_name=EXCLUDED.source_name,
+                    source_name_eng=EXCLUDED.source_name_eng,
+                    source_link=EXCLUDED.source_link,
+                    unit=EXCLUDED.unit,
+                    unit_eng=EXCLUDED.unit_eng,
+                    crncy=EXCLUDED.crncy,
+                    updated_time=now()
             """)
-    void addMinecValues(@Param("sidFields") FeedContributeRequest sidFields);
+    void addMinecStaticValues(@Param("sidFields") FeedContributeRequest sidFields);
+
+    @Insert("""
+                INSERT INTO mds.minec_forecast (sid,
+                        update_date,
+                        forecast_period,
+                        f_val,
+                        f_val_mn)
+                VALUES( #{sidFields.sid},
+                        #{sidFields.fields.updateDate},
+                        TO_DATE(#{sidFields.fields.forecastPeriod}, 'YYYY-MM-DD'),
+                        #{sidFields.fields.fValue},
+                        #{sidFields.fields.valueMn}
+                     )
+                ON CONFLICT ON CONSTRAINT PK_MINEC_FORECAST
+                DO
+                UPDATE SET
+                    f_val=EXCLUDED.f_val,
+                    f_val_mn=EXCLUDED.f_val_mn,
+                    updated_time=now()
+            """)
+    void addMinecForecastValues(@Param("sidFields") FeedContributeRequest sidFields);
+
+    @Insert("""
+                INSERT INTO mds.minec_export (sid,
+                        update_date,
+                        effective_date,
+                        value)
+                VALUES( #{sidFields.sid},
+                        #{sidFields.fields.updateDate},
+                        #{sidFields.fields.effectiveDate},
+                        #{sidFields.fields.last}
+                     )
+                ON CONFLICT ON CONSTRAINT PK_MINEC_EXPORT
+                DO
+                UPDATE SET
+                    value=EXCLUDED.value,
+                    updated_time=now()
+            """)
+    void addMinecExportValues(@Param("sidFields") FeedContributeRequest sidFields);
 
 }

@@ -1,19 +1,19 @@
 package com.spimex.spxfeedmds.service.mds;
 
-import com.spimex.spxfeedmds.general.constant.CbrfSidPostfix;
 import com.spimex.spxfeedmds.general.constant.MdsMessageConstant;
 import com.spimex.spxfeedmds.general.constant.MnecSidPostfix;
 import com.spimex.spxfeedmds.general.constant.OpecSidPostfix;
 import com.spimex.spxfeedmds.general.dto.FeedContributeRequest;
 import com.spimex.spxfeedmds.general.dto.FeedResponse;
+import com.spimex.spxfeedmds.general.util.SidUtil;
 import com.spimex.spxfeedmds.repository.FeedMdsRepository;
 import com.spimex.spxfeedmds.service.UserRoleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
-
 import java.util.LinkedList;
 import java.util.List;
 
@@ -22,22 +22,35 @@ import java.util.List;
 @RequiredArgsConstructor
 public class FeedContributeService {
 
+    private final ApplicationContext applicationContext;
     private final UserRoleService userRoleService;
-    private AbstractFeedService abstractFeedService;
-
     private final FeedMdsRepository repository;
+    private final SidUtil sidUtil;
+    private AbstractFeedService abstractOpecFeedService;
+    private AbstractFeedService abstractMnecFeedService;
+
 
     public List<FeedResponse> addFeedValues(List<FeedContributeRequest> requests, Jwt jwt) {
         userRoleService.checkUserInternalRole(jwt);
         List<FeedResponse> responses = new LinkedList<>();
 
         requests.forEach(requestDto -> {
-            abstractFeedService = chooseService(requestDto.getSid());
-            if (abstractFeedService != null) {
-                FeedResponse status = abstractFeedService.addValues(requestDto);
+            boolean isLoaded = false;
+            abstractOpecFeedService = chooseOpecService(requestDto.getSid());
+            abstractMnecFeedService = chooseMnecService(requestDto.getSid());
+            if (abstractOpecFeedService != null) {
+                isLoaded = true;
+                FeedResponse status = abstractOpecFeedService.addValues(requestDto);
                 responses.add(status);
-            } else {
-                log.warn("Not found service by 'SID' -40-> {}", requestDto.getSid());
+            }
+            if (abstractMnecFeedService != null) {
+                isLoaded = true;
+                FeedResponse status = abstractMnecFeedService.addValues(requestDto);
+                responses.add(status);
+            }
+
+            if (!isLoaded) {
+                log.warn("Not found service by 'SID' --> {}", requestDto.getSid());
                 responses.add(new FeedResponse(
                         requestDto.getSid(),
                         HttpStatus.NOT_FOUND.name(),
@@ -47,18 +60,27 @@ public class FeedContributeService {
         return responses;
     }
 
-    // TODO: delete this methode after test
     public List<FeedResponse> addFeedValues(List<FeedContributeRequest> requests) {
 
         List<FeedResponse> responses = new LinkedList<>();
 
         requests.forEach(requestDto -> {
-            abstractFeedService = chooseService(requestDto.getSid());
-            if (abstractFeedService != null) {
-                FeedResponse status = abstractFeedService.addValues(requestDto);
+            boolean isLoaded = false;
+            abstractOpecFeedService = chooseOpecService(requestDto.getSid());
+            abstractMnecFeedService = chooseMnecService(requestDto.getSid());
+            if (abstractOpecFeedService != null) {
+                isLoaded = true;
+                FeedResponse status = abstractOpecFeedService.addValues(requestDto);
                 responses.add(status);
-            } else {
-                log.warn("Not found service by 'SID' -61-> {}", requestDto.getSid());
+            }
+            if (abstractMnecFeedService != null) {
+                isLoaded = true;
+                FeedResponse status = abstractMnecFeedService.addValues(requestDto);
+                responses.add(status);
+            }
+
+            if (!isLoaded) {
+                log.warn("Not found service by 'SID' --> {}", requestDto.getSid());
                 responses.add(new FeedResponse(
                         requestDto.getSid(),
                         HttpStatus.NOT_FOUND.name(),
@@ -68,8 +90,8 @@ public class FeedContributeService {
         return responses;
     }
 
-    private AbstractFeedService chooseService(String sid) {
-        if (CbrfSidPostfix.fromCbrfPostfixValueIsEquals(sid)) {
+    private AbstractFeedService chooseOpecService(String sid) {
+        if (sidUtil.isCbrfSidPostfix(sid)) {
             log.debug("The service of the Central Bank of the Russian Federation has been selected...");
             return new CentralBankRFService(repository);
         } else if(sid != null &&
@@ -77,10 +99,19 @@ public class FeedContributeService {
                 !sid.endsWith(OpecSidPostfix.OPEC_SID_NOT_REQUIRED)) {
             log.debug("The service of the OPEC has been selected...");
             return new OpecRatesStaticService(repository);
-        } else if(MnecSidPostfix.fromMnecPostfixValueIsEquals(sid)) {
+        } else return null;
+    }
+
+    private AbstractFeedService chooseMnecService(String sid) {
+
+        if (sid == null) {
+            return null;
+        } else if (sid.endsWith(MnecSidPostfix.MNEC_SID)) {
             log.debug("The service of the Ministry of Economic Development of Russia has been selected...");
-            return new MnecService(repository);
+            return new MnecService(repository, sidUtil);
+            //return applicationContext.getBean("MnecService", );
         }
         else return null;
     }
+
 }

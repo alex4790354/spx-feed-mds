@@ -30,7 +30,7 @@ public class FeedMdsController {
     }
 
     @PostMapping("/contribute/SPIMEX_MDS2")
-    public ResponseEntity<List<FeedResponse>> contributeMdsValues2(@RequestBody List<FeedContributeRequest> requests) {
+    public ResponseEntity<List<FeedResponse>> contributeMdsValues(@RequestBody List<FeedContributeRequest> requests) {
         return ResponseEntity.ok(service.addFeedValues(requests));
     }
 
